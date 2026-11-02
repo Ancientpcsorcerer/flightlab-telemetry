@@ -179,6 +179,20 @@ export default function Home() {
           </div>
         </section>
 
+        {overall === "needs_attention" && (
+          <div className="notice notice-attention" role="alert" aria-live="assertive">
+            <span className="notice-mark">!</span>
+            <span>One or more measurements are outside the configured reference range. Review the individual readings below.</span>
+          </div>
+        )}
+
+        {overall === "unable_to_assess" && latest && (
+          <div className="notice" role="status">
+            <span className="notice-mark">i</span>
+            <span>{processed?.notes?.join(" ") || "A required measurement is unavailable or calibration is incomplete."}</span>
+          </div>
+        )}
+
         <section className="reading-layout" aria-label="Latest measurements">
           <div className="metric-stack">
             <article className="temperature-card panel">
