@@ -70,7 +70,7 @@ The firmware sends schema version 1:
   "schemaVersion": 1,
   "deviceId": "smart-bandage-01",
   "timestamp": "2026-11-03T10:30:00Z",
-  "sequence": 1793701800,
+  "sequence": 1,
   "sensors": {
     "temperature": { "value": 29.8, "unit": "degC", "status": "ok" },
     "capacitance": {
@@ -103,7 +103,7 @@ The default temperature reference values are 30.2–33.0 °C for exhibition comp
 
 ## 7. Troubleshooting
 
-- **FDC1004 not detected:** check the Qwiic cable, correct Qwiic port, 3.3 V supply and common ground; the FDC1004 address is 0x50.
+- **FDC1004 not detected:** check the breakout-end SDA/SCL/VCC/GND connections, the UNO main SDA/SCL header, a common ground and the breakout supply; the FDC1004 address is 0x50.
 - **Temperature unavailable:** check DS18B20 orientation, D10 and the 4.7 kΩ pull-up.
 - **HTTP 401:** device key mismatch between sketch and Vercel.
 - **HTTP 400:** inspect the JSON in Serial Monitor and ensure the device clock is synchronized.
