@@ -16,6 +16,7 @@
 */
 
 #include <WiFiS3.h>
+#include <WiFiSSLClient.h>
 #include <WiFiUdp.h>
 #include <NTPClient.h>
 #include <ArduinoJson.h>
@@ -64,6 +65,9 @@ unsigned long lastNtpAttemptMs = 0;
 float lastTemperature = NAN;
 float lastMoisture = NAN;
 String lastOverall = "WAITING FOR DATA";
+String lastLedState = "yellow";
+String lastTemperatureStatus = "Unavailable";
+String lastMoistureStatus = "Calibrate first";
 String lastMeasuredAt = "Waiting for time sync";
 String lastDeviceStatus = "CONNECTING";
 
@@ -288,7 +292,7 @@ void setOfflineLed() {
 
 void drawLabel(int16_t x, int16_t y, const char *label, uint16_t color, uint8_t size = 1) {
   gfx->setTextSize(size);
-  gfx->setTextColor(color, COLOR_BG);
+  gfx->setTextColor(color);
   gfx->setCursor(x, y);
   gfx->print(label);
 }
@@ -304,8 +308,8 @@ void drawDashboard(const String &overall, const String &deviceStatus,
   drawLabel(12, 10, "SMART BANDAGE", COLOR_WHITE, 2);
   drawLabel(width - 105, 14, apiOk ? "ONLINE" : "OFFLINE", apiOk ? COLOR_GREEN : COLOR_YELLOW, 1);
 
-  uint16_t statusColor = overall == "STABLE" ? COLOR_GREEN :
-                         overall == "NEEDS ATTENTION" ? COLOR_RED : COLOR_YELLOW;
+  uint16_t statusColor = lastLedState == "green" ? COLOR_GREEN :
+                         lastLedState == "red" ? COLOR_RED : COLOR_YELLOW;
   gfx->fillRect(10, 42, width - 20, 54, COLOR_PANEL);
   gfx->drawRect(10, 42, width - 20, 54, statusColor);
   drawLabel(20, 49, "OVERALL STATUS", COLOR_MUTED, 1);
