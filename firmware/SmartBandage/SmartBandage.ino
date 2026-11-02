@@ -8,7 +8,7 @@
     Red LED      -> D11 through 330R
     Yellow LED   -> D12 through 330R
     Green LED    -> D13 through 330R
-    FDC1004      -> UNO R4 WiFi Qwiic port (Wire1, 3.3V)
+    FDC1004      -> UNO R4 WiFi main SDA/SCL header (Wire)
     TFT          -> 3.5in ILI9486 parallel shield (Arduino_GFX)
 
   Keep the TFT shield's microSD slot empty. D10-D13 are shared with its
@@ -51,7 +51,7 @@ static const unsigned long WIFI_RETRY_MS = 10000;
 
 OneWire oneWire(TEMP_PIN);
 DallasTemperature temperatureSensor(&oneWire);
-FDC1004 capacitanceSensor(&Wire1, FDC1004_RATE_100HZ);
+FDC1004 capacitanceSensor(&Wire, FDC1004_RATE_100HZ);
 WiFiUDP ntpUdp;
 NTPClient timeClient(ntpUdp, "pool.ntp.org", 0, 60000);
 WiFiSSLClient httpsClient;
@@ -410,8 +410,8 @@ void setup() {
 
   temperatureSensor.begin();
 
-  // FDC1004 Qwiic connector on UNO R4 WiFi is the secondary 3.3V I2C bus.
-  Wire1.begin();
+  // Use the main SDA/SCL header pins, matching the existing jumper wiring.
+  Wire.begin();
   fdcReady = capacitanceSensor.begin();
   Serial.println(fdcReady ? F("[FDC1004] Connected on Wire1") : F("[FDC1004] Not detected on Wire1"));
 
@@ -462,9 +462,11 @@ void loop() {
 
     if (WiFi.status() == WL_CONNECTED && timeSynced) {
       unsigned long epoch = timeClient.getEpochTime();
+      static uint32_t sequenceCounter = 0;
+      sequenceCounter++;
       String timestamp = makeUtcTimestamp(epoch);
       lastMeasuredAt = makeLocalClock(epoch);
-      String payload = buildPayload(temp, tempOk, cin1, cin2, cin3, capOk, timestamp, epoch);
+      String payload = buildPayload(temp, tempOk, cin1, cin2, cin3, capOk, timestamp, sequenceCounter);
 
       Serial.println(F("[POST] Sending telemetry"));
       Serial.println(payload);
