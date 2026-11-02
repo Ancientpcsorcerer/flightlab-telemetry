@@ -68,9 +68,6 @@ String lastOverall = "WAITING FOR DATA";
 String lastLedState = "yellow";
 String lastTemperatureStatus = "Unavailable";
 String lastMoistureStatus = "Calibrate first";
-String lastLedState = "yellow";
-String lastTemperatureStatus = "Unavailable";
-String lastMoistureStatus = "Calibrate first";
 String lastMeasuredAt = "Waiting for time sync";
 String lastDeviceStatus = "CONNECTING";
 
