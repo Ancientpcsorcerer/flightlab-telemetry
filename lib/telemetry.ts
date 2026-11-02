@@ -29,7 +29,7 @@ export type ProcessedTelemetry = {
   moisture: {
     value: number | null;
     unit: "%";
-    status: "within_target" | "below_target" | "above_target" | "unavailable";
+    status: "within_target" | "below_target" | "above_target" | "range_not_configured" | "unavailable";
     range: { min: number; max: number } | null;
   };
   overallStatus: OverallStatus;
@@ -87,13 +87,14 @@ export function processTelemetry(data: IncomingTelemetry): ProcessedTelemetry {
     : null;
   const moistureRangeValid = Number.isFinite(MOISTURE_MIN) && Number.isFinite(MOISTURE_MAX) && MOISTURE_MIN < MOISTURE_MAX;
   const moistureStatus: ProcessedTelemetry["moisture"]["status"] =
-    moistureValue === null || !moistureRangeValid ? "unavailable" :
-      moistureValue < MOISTURE_MIN ? "below_target" :
-        moistureValue > MOISTURE_MAX ? "above_target" : "within_target";
+    moistureValue === null ? "unavailable" :
+      !moistureRangeValid ? "range_not_configured" :
+        moistureValue < MOISTURE_MIN ? "below_target" :
+          moistureValue > MOISTURE_MAX ? "above_target" : "within_target";
 
   const tempOut = tempStatus === "below_range" || tempStatus === "above_range";
   const moistureOut = moistureStatus === "below_target" || moistureStatus === "above_target";
-  const allAvailable = tempStatus !== "unavailable" && moistureStatus !== "unavailable";
+  const allAvailable = tempStatus !== "unavailable" && moistureStatus !== "unavailable" && moistureStatus !== "range_not_configured";
   const overallStatus: OverallStatus = !allAvailable
     ? "unable_to_assess"
     : tempOut || moistureOut ? "needs_attention" : "stable";
@@ -114,7 +115,7 @@ export function processTelemetry(data: IncomingTelemetry): ProcessedTelemetry {
       range: { min: TEMP_MIN, max: TEMP_MAX },
     },
     moisture: {
-      value: moistureStatus === "unavailable" ? null : moistureValue,
+      value: moistureValue,
       unit: "%",
       status: moistureStatus,
       range: moistureRangeValid ? { min: MOISTURE_MIN, max: MOISTURE_MAX } : null,
