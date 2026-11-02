@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 type MetricStatus =
   | "within_range" | "below_range" | "above_range" | "within_target"
-  | "below_target" | "above_target" | "unavailable";
+  | "below_target" | "above_target" | "range_not_configured" | "unavailable";
 type OverallStatus = "stable" | "needs_attention" | "unable_to_assess";
 type HistoryPoint = {
   measuredAt: string;
@@ -53,6 +53,7 @@ function statusText(status: MetricStatus) {
     case "below_target": return "Below reference range";
     case "above_range":
     case "above_target": return "Above reference range";
+    case "range_not_configured": return "Target range not configured";
     default: return "Unavailable";
   }
 }
