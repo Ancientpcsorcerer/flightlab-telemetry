@@ -132,10 +132,6 @@ export default function Home() {
         ? "No recent readings received. Check the device connection."
         : "A required sensor reading or calibration is unavailable.";
 
-  const moistureLabel = processed?.moisture.value === null || processed?.moisture.value === undefined
-    ? "Calibration required"
-    : `${processed.moisture.value.toFixed(1)}%`;
-
   return (
     <main className="site-shell">
       <header className="topbar">
@@ -149,7 +145,7 @@ export default function Home() {
           <span className="brand-copy"><strong>Smart Bandage</strong><span>LIVE MONITORING</span></span>
         </a>
         <div className="topbar-actions">
-          <span className={`connection-pill connection-${deviceStatus}`}>
+          <span className={`connection-pill connection-${visibleDeviceStatus}`}>
             <span className="tag-dot" />{visibleDeviceStatus === "connected" ? "DEVICE ONLINE" : visibleDeviceStatus === "stale" ? "DATA STALE" : "DEVICE OFFLINE"}
           </span>
           <button className="refresh-button" type="button" onClick={() => void refreshTelemetry()} disabled={refreshing}>
