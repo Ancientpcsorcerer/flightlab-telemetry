@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type MetricStatus =
@@ -135,7 +136,7 @@ export default function Home() {
   return (
     <main className="site-shell">
       <header className="topbar">
-        <a className="brand" href="/" aria-label="Smart Bandage home">
+        <Link className="brand" href="/" aria-label="Smart Bandage home">
           <span className="brand-mark" aria-hidden="true">
             <svg viewBox="0 0 32 32" fill="none">
               <path d="M16 5v22M5 16h22" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
@@ -143,7 +144,7 @@ export default function Home() {
             </svg>
           </span>
           <span className="brand-copy"><strong>Smart Bandage</strong><span>LIVE MONITORING</span></span>
-        </a>
+        </Link>
         <div className="topbar-actions">
           <span className={`connection-pill connection-${visibleDeviceStatus}`}>
             <span className="tag-dot" />{visibleDeviceStatus === "connected" ? "DEVICE ONLINE" : visibleDeviceStatus === "stale" ? "DATA STALE" : "DEVICE OFFLINE"}
