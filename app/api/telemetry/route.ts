@@ -68,6 +68,7 @@ export async function POST(request: Request) {
     measuredAt: data.timestamp,
     deviceId: data.deviceId,
     sequence: data.sequence,
+    raw: data, // retained server-side for calibration/diagnostics; never returned by GET
     processed,
   };
 
