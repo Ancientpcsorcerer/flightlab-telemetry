@@ -419,7 +419,7 @@ void setup() {
   // Use the main SDA/SCL header pins, matching the existing jumper wiring.
   Wire.begin();
   fdcReady = capacitanceSensor.begin();
-  Serial.println(fdcReady ? F("[FDC1004] Connected on Wire1") : F("[FDC1004] Not detected on Wire1"));
+  Serial.println(fdcReady ? F("[FDC1004] Connected on main Wire bus") : F("[FDC1004] Not detected on main Wire bus"));
 
   timeClient.begin();
   WiFi.begin(SECRET_SSID, SECRET_PASS);
