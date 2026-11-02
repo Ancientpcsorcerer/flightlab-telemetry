@@ -368,9 +368,15 @@ bool applyApiResponse(const String &body) {
   const char *led = responseDoc["processed"]["led"]["state"] | "yellow";
   const char *status = responseDoc["processed"]["overallStatus"] | "unable_to_assess";
   lastOverall = String(status);
-  lastOverall.toUpperCase();
-  lastOverall.replace("_", " ");
-  lastLedState = String(led);
+  if (lastOverall == "stable") lastOverall = "STABLE";
+  else if (lastOverall == "needs_attention") lastOverall = "NEEDS ATTENTION";
+  else lastOverall = "UNABLE TO ASSESS";
+
+  if (strcmp(led, "green") == 0 || strcmp(led, "yellow") == 0 || strcmp(led, "red") == 0) {
+    lastLedState = String(led);
+  } else {
+    lastLedState = "yellow";
+  }
 
   const char *tempStatus = responseDoc["processed"]["temperature"]["status"] | "unavailable";
   const char *moistureStatus = responseDoc["processed"]["moisture"]["status"] | "unavailable";
@@ -390,7 +396,7 @@ bool applyApiResponse(const String &body) {
   lastMoisture = moistureValue.isNull() ? NAN : (float)moistureValue.as<float>();
 
   lastDeviceStatus = "API CONNECTED";
-  setLeds(led);
+  setLeds(lastLedState.c_str());
   return true;
 }
 
