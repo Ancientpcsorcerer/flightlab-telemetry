@@ -45,9 +45,7 @@ The real `arduino_secrets.h` is ignored by Git. Do not commit it.
 
 ### FDC1004 bus note
 
-The UNO R4 WiFi Qwiic connector is the secondary I²C bus (`Wire1`) and is 3.3 V. This sketch initializes the FDC1004 on `Wire1`. Connect the ProtoCentral breakout's Qwiic socket to the UNO Qwiic socket. Do not feed 5 V into the UNO Qwiic connector.
-
-The previous SDA/SCL jumper wires on the main header are not used by this sketch. The FDC1004 breakout must have a Qwiic connector compatible with the cable.
+This sketch uses the **main I²C bus (`Wire`)** because the current prototype connects the breakout's labelled SDA/SCL pins to the UNO R4 WiFi's dedicated SDA/SCL header. Keep those connections; do not move them to the Qwiic connector for this firmware. Connect SDA to SDA and SCL to SCL. Connect breakout VCC and GND only to the pins labelled VCC and GND on the ProtoCentral breakout, and keep a common ground. The ProtoCentral breakout's VCC input supports 5 V through its onboard regulator; the UNO's Qwiic connector is a separate 3.3 V bus and is not used here.
 
 ### TFT shield note
 
@@ -86,7 +84,7 @@ The firmware sends schema version 1:
 }
 ```
 
-The sequence uses NTP epoch seconds so it remains monotonic across normal device restarts. The API returns processed temperature/moisture status and `processed.led.state` (`green`, `yellow`, or `red`). Raw CIN values are retained server-side but are not returned by the public GET dashboard API.
+The sequence counter increments during each powered session. The API uses the UTC measurement timestamp for replay/order checks, so a counter reset after a board reboot does not prevent later readings from being accepted. The API returns processed temperature/moisture status and `processed.led.state` (`green`, `yellow`, or `red`). Raw CIN values are retained server-side but are not returned by the public GET dashboard API.
 
 ## 6. Moisture calibration
 
