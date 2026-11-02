@@ -68,6 +68,9 @@ String lastOverall = "WAITING FOR DATA";
 String lastLedState = "yellow";
 String lastTemperatureStatus = "Unavailable";
 String lastMoistureStatus = "Calibrate first";
+String lastLedState = "yellow";
+String lastTemperatureStatus = "Unavailable";
+String lastMoistureStatus = "Calibrate first";
 String lastMeasuredAt = "Waiting for time sync";
 String lastDeviceStatus = "CONNECTING";
 
@@ -328,8 +331,10 @@ void drawDashboard(const String &overall, const String &deviceStatus,
     char value[20];
     snprintf(value, sizeof(value), "%.1f C", temperature);
     drawLabel(18, cardY + 42, value, COLOR_WHITE, width < 360 ? 2 : 3);
+    drawLabel(18, cardY + 82, lastTemperatureStatus.c_str(), COLOR_MUTED, 1);
   } else {
     drawLabel(18, cardY + 48, "NO DATA", COLOR_YELLOW, 2);
+    drawLabel(18, cardY + 82, lastTemperatureStatus.c_str(), COLOR_MUTED, 1);
   }
 
   gfx->fillRect(secondX, cardY, cardWidth, cardH, COLOR_PANEL);
@@ -339,9 +344,10 @@ void drawDashboard(const String &overall, const String &deviceStatus,
     char value[20];
     snprintf(value, sizeof(value), "%.1f%%", moisture);
     drawLabel(secondX + 8, cardY + 42, value, COLOR_WHITE, width < 360 ? 2 : 3);
-    drawLabel(secondX + 8, cardY + 82, "CALIBRATED", COLOR_GREEN, 1);
+    drawLabel(secondX + 8, cardY + 82, lastMoistureStatus.c_str(), COLOR_MUTED, 1);
   } else {
     drawLabel(secondX + 8, cardY + 48, "CALIBRATE", COLOR_YELLOW, 2);
+    drawLabel(secondX + 8, cardY + 82, lastMoistureStatus.c_str(), COLOR_MUTED, 1);
   }
 
   int16_t footerY = cardY + cardH + 18;
@@ -366,6 +372,20 @@ bool applyApiResponse(const String &body) {
   const char *status = responseDoc["processed"]["overallStatus"] | "unable_to_assess";
   lastOverall = String(status);
   lastOverall.toUpperCase();
+  lastOverall.replace("_", " ");
+  lastLedState = String(led);
+
+  const char *tempStatus = responseDoc["processed"]["temperature"]["status"] | "unavailable";
+  const char *moistureStatus = responseDoc["processed"]["moisture"]["status"] | "unavailable";
+  auto friendly = [](const char *value) -> String {
+    if (strcmp(value, "within_range") == 0 || strcmp(value, "within_target") == 0) return "Within range";
+    if (strcmp(value, "below_range") == 0 || strcmp(value, "below_target") == 0) return "Below range";
+    if (strcmp(value, "above_range") == 0 || strcmp(value, "above_target") == 0) return "Above range";
+    if (strcmp(value, "range_not_configured") == 0) return "Target not set";
+    return "Unavailable";
+  };
+  lastTemperatureStatus = friendly(tempStatus);
+  lastMoistureStatus = friendly(moistureStatus);
 
   JsonVariantConst tempValue = responseDoc["processed"]["temperature"]["value"];
   lastTemperature = tempValue.isNull() ? NAN : (float)tempValue.as<float>();
@@ -463,6 +483,7 @@ void loop() {
           lastMeasuredAt, true);
       } else {
         setOfflineLed();
+        lastLedState = "yellow";
         lastDeviceStatus = "API UNAVAILABLE";
         drawDashboard("UNABLE TO ASSESS", lastDeviceStatus,
           lastTemperature, isfinite(lastTemperature),
@@ -472,6 +493,7 @@ void loop() {
       }
     } else {
       setOfflineLed();
+      lastLedState = "yellow";
       lastOverall = "UNABLE TO ASSESS";
       lastDeviceStatus = "WAITING FOR WIFI / TIME";
       drawDashboard(lastOverall, lastDeviceStatus,
