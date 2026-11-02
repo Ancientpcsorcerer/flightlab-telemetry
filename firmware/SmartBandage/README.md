@@ -41,7 +41,7 @@ The real `arduino_secrets.h` is ignored by Git. Do not commit it.
 | Yellow LED anode | D12 through its own 330 Ω resistor |
 | Green LED anode | D13 through its own 330 Ω resistor |
 | All LED cathodes | GND |
-| FDC1004 | Qwiic connector using a Qwiic cable |
+| FDC1004 | Labelled SDA/SCL pins on main I2C bus |
 
 ### FDC1004 bus note
 
@@ -61,7 +61,7 @@ The display uses the previously tested 8-bit parallel Arduino_GFX setup. The shi
 4. Confirm `arduino_secrets.h` is in the same sketch folder.
 5. Upload and open Serial Monitor at 115200 baud.
 
-The sketch samples about every 2 seconds. It synchronizes UTC time through NTP, sends an HTTPS POST to `/api/telemetry`, parses the processed API response, updates the TFT, and sets the LEDs. If Wi-Fi/API/time is unavailable, it does not pretend the system is stable; the yellow LED blinks.
+The sketch samples about every 2 seconds. It synchronizes UTC time through NTP, sends an HTTPS POST to `/api/telemetry`, parses the processed API response, updates the TFT, and sets the LEDs. The sequence counter increments during a boot session; the server orders/replay-checks readings by measurement timestamp so a reboot does not lock out subsequent samples. If Wi-Fi/API/time is unavailable, it does not pretend the system is stable; the yellow LED blinks.
 
 ## 5. Firmware/API contract
 
