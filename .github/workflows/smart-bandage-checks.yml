@@ -1,0 +1,63 @@
+name: Smart Bandage checks
+
+on:
+  push:
+    branches:
+      - smart-bandage-live-v1
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  web:
+    name: Web lint and production build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Build production application
+        run: npm run build
+
+  firmware:
+    name: Arduino UNO R4 WiFi compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install UNO R4 WiFi board core
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:renesas_uno
+
+      - name: Install sketch libraries
+        run: |
+          arduino-cli lib update-index
+          arduino-cli lib install "GFX Library for Arduino"
+          arduino-cli lib install OneWire
+          arduino-cli lib install DallasTemperature
+          arduino-cli lib install "ProtoCentral FDC1004 Capacitive Sensor Library"
+          arduino-cli lib install "ArduinoJson@7"
+          arduino-cli lib install NTPClient
+
+      - name: Create local-only credential header for CI
+        run: cp firmware/SmartBandage/arduino_secrets.h.example firmware/SmartBandage/arduino_secrets.h
+
+      - name: Compile Arduino firmware
+        run: arduino-cli compile --fqbn arduino:renesas_uno:unor4wifi --warnings all firmware/SmartBandage
