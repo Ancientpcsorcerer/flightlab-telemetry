@@ -1,131 +1,100 @@
-
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-type TelemetryData = Record<string, unknown>;
-type TelemetryReading = {
+type MetricStatus =
+  | "within_range" | "below_range" | "above_range" | "within_target"
+  | "below_target" | "above_target" | "unavailable";
+type OverallStatus = "stable" | "needs_attention" | "unable_to_assess";
+type HistoryPoint = {
+  measuredAt: string;
+  temperature: number | null;
+  moisture: number | null;
+  overallStatus: OverallStatus;
+};
+type Processed = {
+  temperature: { value: number | null; unit: "°C"; status: MetricStatus; range: { min: number; max: number } };
+  moisture: { value: number | null; unit: "%"; status: MetricStatus; range: { min: number; max: number } | null };
+  overallStatus: OverallStatus;
+  led: { state: "green" | "yellow" | "red" };
+  notes: string[];
+};
+type Latest = {
+  deviceId: string;
+  sequence: number;
+  measuredAt: string;
   receivedAt: string;
-  data: TelemetryData;
+  deviceStatus: "connected" | "stale" | "offline";
+  processed: Processed;
 };
-type TelemetryResponse = {
-  ok: boolean;
-  latest: TelemetryReading | null;
-  error?: string;
-};
-type AlertItem = {
-  id: string;
-  title: string;
-  message: string;
-  key: string;
-  severity: "warning";
-};
+type ApiResponse = { ok: boolean; latest: Latest | null; history: HistoryPoint[]; error?: string };
 
-// Prototype configuration, NOT universal medical thresholds.
-// Configure moisture limits only after sensor calibration and validation.
-// Temperature warnings compare against a supplied reference temperature.
-const TEMP_DELTA_WARNING_C = 1.5;
-const MOISTURE_LOW_LIMIT: number | null = null;
-const MOISTURE_HIGH_LIMIT: number | null = null;
-const ALERT_COOLDOWN_MS = 60_000;
+const POLL_MS = 2000;
 
-function numericValue(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-}
-
-function firstNumeric(
-  data: TelemetryData | undefined,
-  keys: string[]
-): number | null {
-  if (!data) return null;
-
-  for (const key of keys) {
-    const value = numericValue(data[key]);
-    if (value !== null) return value;
-  }
-
-  return null;
-}
-
-function formatTimestamp(value?: string): string {
-  if (!value) return "Waiting for the first reading";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Time unavailable";
-  }
-
+function formatTimestamp(value?: string) {
+  if (!value || Number.isNaN(Date.parse(value))) return "Timestamp unavailable";
   return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
     day: "2-digit",
     month: "short",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-  }).format(date);
+    hour12: true,
+  }).format(new Date(value)) + " IST";
 }
 
-function isTestPayload(data?: TelemetryData): boolean {
-  return Boolean(
-    data &&
-      (data.test === "flightlab" ||
-        data.test === "smart-bandage" ||
-        data.test === true ||
-        data.isTest === true)
+function statusText(status: MetricStatus) {
+  switch (status) {
+    case "within_range":
+    case "within_target": return "Within reference range";
+    case "below_range":
+    case "below_target": return "Below reference range";
+    case "above_range":
+    case "above_target": return "Above reference range";
+    default: return "Unavailable";
+  }
+}
+
+function overallText(status?: OverallStatus) {
+  if (status === "stable") return "STABLE";
+  if (status === "needs_attention") return "NEEDS ATTENTION";
+  return "UNABLE TO ASSESS";
+}
+
+function makePolyline(values: Array<number | null>) {
+  const valid = values.map((value, index) => ({ value, index })).filter(
+    (item): item is { value: number; index: number } => item.value !== null && Number.isFinite(item.value)
   );
-}
-
-function displayValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") {
-    return "—";
-  }
-
-  if (["string", "number", "boolean"].includes(typeof value)) {
-    return String(value);
-  }
-
-  return "—";
+  if (valid.length < 2) return "";
+  const min = Math.min(...valid.map((item) => item.value));
+  const max = Math.max(...valid.map((item) => item.value));
+  const span = max - min || 1;
+  return valid.map(({ value, index }) => {
+    const x = 6 + (index / Math.max(values.length - 1, 1)) * 288;
+    const y = 68 - ((value - min) / span) * 54;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
 }
 
 export default function Home() {
-  const [reading, setReading] = useState<TelemetryReading | null>(null);
+  const [payload, setPayload] = useState<ApiResponse | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
-  const [alertHistory, setAlertHistory] = useState<AlertItem[]>([]);
-
-  const lastAlertAt = useRef<Record<string, number>>({});
 
   const refreshTelemetry = useCallback(async () => {
     setRefreshing(true);
-
     try {
       const response = await fetch("/api/telemetry", {
         method: "GET",
         cache: "no-store",
         headers: { Accept: "application/json" },
       });
-
-      if (!response.ok) {
-        throw new Error("Unable to refresh readings");
-      }
-
-      const result = (await response.json()) as TelemetryResponse;
-
-      if (!result.ok) {
-        throw new Error("Unable to refresh readings");
-      }
-
-      setReading(result.latest);
+      if (!response.ok) throw new Error("API request failed");
+      const result = await response.json() as ApiResponse;
+      if (!result.ok) throw new Error(result.error || "Telemetry unavailable");
+      setPayload(result);
       setLoadError(false);
     } catch {
       setLoadError(true);
@@ -136,170 +105,34 @@ export default function Home() {
 
   useEffect(() => {
     void refreshTelemetry();
-
-    const interval = window.setInterval(() => {
-      void refreshTelemetry();
-    }, 3000);
-
-    return () => window.clearInterval(interval);
+    const timer = window.setInterval(() => void refreshTelemetry(), POLL_MS);
+    return () => window.clearInterval(timer);
   }, [refreshTelemetry]);
 
-  const data = reading?.data;
+  const latest = payload?.latest ?? null;
+  const processed = latest?.processed ?? null;
+  const history = payload?.history ?? [];
+  const deviceStatus = latest?.deviceStatus ?? "offline";
+  const tempValues = history.slice(-30).map((item) => item.temperature);
+  const tempPolyline = makePolyline(tempValues);
+  const moistureValues = history.slice(-30).map((item) => item.moisture);
+  const moisturePolyline = makePolyline(moistureValues);
 
-  const temperature = firstNumeric(data, [
-    "temperature",
-    "temp",
-    "temperatureC",
-    "temperature_c",
-  ]);
+  const overall = !latest || deviceStatus !== "connected"
+    ? "unable_to_assess"
+    : processed?.overallStatus ?? "unable_to_assess";
 
-  const moisture = firstNumeric(data, [
-    "moisture",
-    "moisturePercent",
-    "moisture_percent",
-    "humidity",
-  ]);
+  const overallMessage = overall === "stable"
+    ? "Both measurements are within the configured reference ranges."
+    : overall === "needs_attention"
+      ? "One or more measurements are outside the configured reference ranges."
+      : deviceStatus === "stale" || deviceStatus === "offline"
+        ? "No recent readings received. Check the device connection."
+        : "A required sensor reading or calibration is unavailable.";
 
-  const baselineTemperature = firstNumeric(data, [
-    "baselineTemperature",
-    "baseline_temperature",
-    "referenceTemperature",
-    "reference_temperature",
-  ]);
-
-  const sampleNumber = data?.sampleNumber;
-  const testPayload = isTestPayload(data);
-
-  const tempDelta =
-    temperature !== null && baselineTemperature !== null
-      ? temperature - baselineTemperature
-      : null;
-
-  const activeAlerts = useMemo<AlertItem[]>(() => {
-    if (!data || testPayload) return [];
-
-    const alerts: AlertItem[] = [];
-
-    if (
-      tempDelta !== null &&
-      Math.abs(tempDelta) >= TEMP_DELTA_WARNING_C
-    ) {
-      const direction = tempDelta > 0 ? "higher" : "lower";
-
-      alerts.push({
-        id: `temperature-${direction}`,
-        key: `temperature-${direction}`,
-        severity: "warning",
-        title:
-          tempDelta > 0
-            ? "Temperature is elevated"
-            : "Temperature is lower than baseline",
-        message: `The measured temperature is ${Math.abs(
-          tempDelta
-        ).toFixed(
-          1
-        )} °C ${direction} than the supplied reference temperature. Check the bandage and follow your clinician’s care instructions.`,
-      });
-    }
-
-    if (
-      moisture !== null &&
-      MOISTURE_LOW_LIMIT !== null &&
-      moisture < MOISTURE_LOW_LIMIT
-    ) {
-      alerts.push({
-        id: "moisture-low",
-        key: "moisture-low",
-        severity: "warning",
-        title: "Moisture reading is low",
-        message:
-          "The sensor reading is below its calibrated range. Check the dressing and follow your clinician’s care instructions.",
-      });
-    }
-
-    if (
-      moisture !== null &&
-      MOISTURE_HIGH_LIMIT !== null &&
-      moisture > MOISTURE_HIGH_LIMIT
-    ) {
-      alerts.push({
-        id: "moisture-high",
-        key: "moisture-high",
-        severity: "warning",
-        title: "Moisture reading is high",
-        message:
-          "The sensor reading is above its calibrated range. Check the dressing and follow your clinician’s care instructions.",
-      });
-    }
-
-    return alerts;
-  }, [data, testPayload, tempDelta, moisture]);
-
-  useEffect(() => {
-    if (activeAlerts.length === 0) return;
-
-    const now = Date.now();
-
-    const newAlerts = activeAlerts.filter(
-      (alert) =>
-        now - (lastAlertAt.current[alert.key] ?? 0) >=
-        ALERT_COOLDOWN_MS
-    );
-
-    if (newAlerts.length === 0) return;
-
-    for (const alert of newAlerts) {
-      lastAlertAt.current[alert.key] = now;
-    }
-
-    setAlertHistory((previous) =>
-      [...newAlerts, ...previous].slice(0, 8)
-    );
-
-    setDismissedIds((previous) =>
-      previous.filter(
-        (id) => !newAlerts.some((alert) => alert.id === id)
-      )
-    );
-  }, [activeAlerts]);
-
-  const visibleAlerts = alertHistory.filter(
-    (alert) => !dismissedIds.includes(alert.id)
-  );
-
-  const temperatureOutOfRange = activeAlerts.some((alert) =>
-    alert.key.startsWith("temperature-")
-  );
-
-  const moistureOutOfRange = activeAlerts.some((alert) =>
-    alert.key.startsWith("moisture-")
-  );
-
-  const conditionLabel = testPayload
-    ? "Demo reading"
-    : activeAlerts.length > 0
-      ? "Needs attention"
-      : reading
-        ? "No active alerts"
-        : "Awaiting readings";
-
-  const sampleText =
-    sampleNumber === undefined || sampleNumber === null
-      ? "Latest reading"
-      : `Sample #${displayValue(sampleNumber)}`;
-
-  const readingDescription = testPayload
-    ? `${sampleText} · Test data, not a real sensor measurement`
-    : reading
-      ? `${sampleText} · From your Smart Bandage`
-      : "Your latest measurements will appear here";
-
-  const moistureUnit =
-    data?.moisturePercent !== undefined ||
-    data?.moisture_percent !== undefined ||
-    data?.humidity !== undefined
-      ? "%"
-      : "";
+  const moistureLabel = processed?.moisture.value === null || processed?.moisture.value === undefined
+    ? "Calibration required"
+    : `${processed.moisture.value.toFixed(1)}%`;
 
   return (
     <main className="site-shell">
@@ -307,338 +140,146 @@ export default function Home() {
         <a className="brand" href="/" aria-label="Smart Bandage home">
           <span className="brand-mark" aria-hidden="true">
             <svg viewBox="0 0 32 32" fill="none">
-              <path
-                d="M16 5v22M5 16h22"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
-              <rect
-                x="7"
-                y="7"
-                width="18"
-                height="18"
-                rx="5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              />
+              <path d="M16 5v22M5 16h22" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              <rect x="7" y="7" width="18" height="18" rx="5" stroke="currentColor" strokeWidth="1.5" />
             </svg>
           </span>
-
-          <span className="brand-copy">
-            <strong>Smart Bandage</strong>
-            <span>PERSONAL CARE</span>
-          </span>
+          <span className="brand-copy"><strong>Smart Bandage</strong><span>LIVE MONITORING</span></span>
         </a>
-
-        <button
-          className="refresh-button"
-          type="button"
-          onClick={() => void refreshTelemetry()}
-          disabled={refreshing}
-          aria-label="Refresh readings"
-        >
-          <svg
-            className={refreshing ? "refresh-icon spinning" : "refresh-icon"}
-            viewBox="0 0 20 20"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M16 8a6.1 6.1 0 0 0-10.9-2L3.5 8M3.5 4.5V8H7M4 12a6.1 6.1 0 0 0 10.9 2l1.6-2M16.5 15.5V12H13"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          <span>{refreshing ? "Updating" : "Refresh"}</span>
-        </button>
+        <div className="topbar-actions">
+          <span className={`connection-pill connection-${deviceStatus}`}>
+            <span className="tag-dot" />{deviceStatus === "connected" ? "DEVICE ONLINE" : deviceStatus === "stale" ? "DATA STALE" : "DEVICE OFFLINE"}
+          </span>
+          <button className="refresh-button" type="button" onClick={() => void refreshTelemetry()} disabled={refreshing}>
+            <svg className={refreshing ? "refresh-icon spinning" : "refresh-icon"} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="M16 8a6.1 6.1 0 0 0-10.9-2L3.5 8M3.5 4.5V8H7M4 12a6.1 6.1 0 0 0 10.9 2l1.6-2M16.5 15.5V12H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg><span>{refreshing ? "Updating" : "Refresh"}</span>
+          </button>
+        </div>
       </header>
 
       <div className="page-content">
         <section className="page-heading">
-          <div className="eyebrow">
-            <span className="eyebrow-line" />
-            YOUR WELLBEING
-          </div>
-
-          <h1>
-            Your bandage<span>.</span>
-          </h1>
-
-          <p>Check your latest readings and any care alerts.</p>
+          <div className="eyebrow"><span className="eyebrow-line" />YOUR WELLBEING</div>
+          <h1>Smart Bandage<span>.</span></h1>
+          <p>Live readings from your connected monitoring device.</p>
         </section>
 
-        {loadError && (
-          <div className="notice" role="status" aria-live="polite">
-            <span className="notice-mark">!</span>
-            <span>
-              We couldn’t update your readings just now. We’ll try again
-              automatically.
-            </span>
+        {loadError && <div className="notice" role="status">We couldn’t reach the telemetry service. Retrying automatically.</div>}
+
+        <section className={`overall-panel overall-${overall}`} aria-live="polite">
+          <div className="overall-left">
+            <div className="overall-kicker">OVERALL MONITORING STATUS</div>
+            <h2>{overallText(overall)}</h2>
+            <p>{overallMessage}</p>
           </div>
-        )}
+          <div className="overall-indicator" aria-hidden="true">
+            {overall === "stable" ? "✓" : overall === "needs_attention" ? "!" : "—"}
+          </div>
+        </section>
 
-        {visibleAlerts.length > 0 && (
-          <section
-            className="alerts"
-            aria-label="Care alerts"
-            aria-live="polite"
-          >
-            {visibleAlerts.map((alert) => (
-              <article className="alert-card" key={alert.id}>
-                <div className="alert-symbol" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M12 3.5 21 20H3L12 3.5Z"
-                      stroke="currentColor"
-                      strokeWidth="1.7"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M12 9v5M12 17.2v.1"
-                      stroke="currentColor"
-                      strokeWidth="1.9"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </div>
-
-                <div className="alert-copy">
-                  <div className="alert-heading">{alert.title}</div>
-                  <p>{alert.message}</p>
-                  <span className="alert-footnote">
-                    This alert is informational and is not a diagnosis.
-                  </span>
-                </div>
-
-                <button
-                  className="dismiss-button"
-                  type="button"
-                  onClick={() =>
-                    setDismissedIds((previous) =>
-                      previous.includes(alert.id)
-                        ? previous
-                        : [...previous, alert.id]
-                    )
-                  }
-                >
-                  Stop Alert
-                </button>
-              </article>
-            ))}
-          </section>
-        )}
-
-        <section
-          className="reading-layout"
-          aria-label="Latest measurements"
-        >
+        <section className="reading-layout" aria-label="Latest measurements">
           <div className="metric-stack">
-            {/* TEMPERATURE CARD */}
-            <article
-              className={`temperature-card panel ${
-                temperatureOutOfRange ? "metric-alert" : ""
-              }`}
-            >
+            <article className="temperature-card panel">
               <div className="card-topline">
-                <div className="metric-overline">
-                  LATEST MEASUREMENT
-                </div>
-
-                {testPayload ? (
-                  <span className="data-tag test-tag">
-                    <span className="tag-dot" />
-                    TEST DATA
-                  </span>
-                ) : (
-                  <span
-                    className={`data-tag ${
-                      temperatureOutOfRange
-                        ? "warning-tag"
-                        : "live-tag"
-                    }`}
-                  >
-                    <span className="tag-dot" />
-                    {temperatureOutOfRange
-                      ? "CHECK READING"
-                      : reading
-                        ? "LATEST READING"
-                        : "AWAITING DATA"}
-                  </span>
-                )}
+                <div className="metric-overline">LIVE MEASUREMENT</div>
+                <span className="data-tag live-tag"><span className="tag-dot" />TEMPERATURE</span>
               </div>
-
-              <div className="temperature-title">
-                {testPayload ? "Test temperature" : "Temperature"}
-              </div>
-
-              <div
-                className="temperature-value"
-                aria-label={
-                  temperature === null
-                    ? "No temperature reading yet"
-                    : `${temperature.toFixed(1)} degrees Celsius`
-                }
-              >
-                <span className="temperature-number">
-                  {temperature === null
-                    ? "—"
-                    : temperature.toFixed(1)}
-                </span>
+              <div className="temperature-title">Temperature</div>
+              <div className="temperature-value">
+                <span className="temperature-number">{processed?.temperature.value === null || processed?.temperature.value === undefined ? "—" : processed.temperature.value.toFixed(1)}</span>
                 <span className="temperature-unit">°C</span>
               </div>
-
               <p className="temperature-note">
-                {readingDescription}
+                {processed ? statusText(processed.temperature.status) : "Waiting for the first sensor reading"}
+                {processed && ` · Reference ${processed.temperature.range.min.toFixed(1)}–${processed.temperature.range.max.toFixed(1)}°C`}
               </p>
-
               <div className="hero-divider" />
-
               <div className="hero-footer">
-                <div className="hero-footer-item">
-                  <span className="footer-label">LAST UPDATED</span>
-                  <strong>{formatTimestamp(reading?.receivedAt)}</strong>
-                </div>
-
-                <span className="auto-update">
-                  <span className="auto-update-dot" />
-                  Updates automatically
-                </span>
+                <div className="hero-footer-item"><span className="footer-label">MEASURED AT</span><strong>{formatTimestamp(latest?.measuredAt)}</strong></div>
+                <span className="auto-update"><span className="auto-update-dot" />Live updates</span>
               </div>
             </article>
 
-            {/* MOISTURE CARD — SAME DESIGN, DIRECTLY UNDER TEMPERATURE */}
-            <article
-              className={`temperature-card panel moisture-measurement-card ${
-                moistureOutOfRange ? "metric-alert" : ""
-              }`}
-            >
+            <article className="temperature-card panel">
               <div className="card-topline">
-                <div className="metric-overline">
-                  LATEST MEASUREMENT
-                </div>
-
-                {testPayload ? (
-                  <span className="data-tag test-tag">
-                    <span className="tag-dot" />
-                    TEST DATA
-                  </span>
-                ) : (
-                  <span
-                    className={`data-tag ${
-                      moistureOutOfRange
-                        ? "warning-tag"
-                        : "live-tag"
-                    }`}
-                  >
-                    <span className="tag-dot" />
-                    {moistureOutOfRange
-                      ? "CHECK READING"
-                      : moisture !== null
-                        ? "LATEST READING"
-                        : "AWAITING DATA"}
-                  </span>
-                )}
+                <div className="metric-overline">CALIBRATED ESTIMATE</div>
+                <span className="data-tag live-tag"><span className="tag-dot" />MOISTURE</span>
               </div>
-
-              <div className="temperature-title">Moisture</div>
-
-              <div
-                className="temperature-value"
-                aria-label={
-                  moisture === null
-                    ? "No moisture reading yet"
-                    : `Moisture ${moisture.toFixed(1)} ${moistureUnit}`
-                }
-              >
-                <span className="temperature-number">
-                  {moisture === null ? "—" : moisture.toFixed(1)}
+              <div className="temperature-title">Moisture balance</div>
+              <div className="temperature-value">
+                <span className={processed?.moisture.value == null ? "temperature-number value-unavailable" : "temperature-number"}>
+                  {processed?.moisture.value == null ? "—" : processed.moisture.value.toFixed(1)}
                 </span>
-                <span className="temperature-unit">{moistureUnit}</span>
+                <span className="temperature-unit">{processed?.moisture.value == null ? "" : "%"}</span>
               </div>
-
               <p className="temperature-note">
-                {moisture === null
-                  ? "Waiting for a moisture sensor"
-                  : moistureOutOfRange
-                    ? "Outside calibrated range"
-                    : testPayload
-                      ? "Test data, not a real sensor measurement"
-                      : "Sensor reading from your Smart Bandage"}
+                {processed?.moisture.value == null
+                  ? "Calibration required — raw electrode measurements are not displayed."
+                  : `${statusText(processed.moisture.status)}${processed.moisture.range ? ` · Target ${processed.moisture.range.min}–${processed.moisture.range.max}%` : ""}`}
               </p>
-
               <div className="hero-divider" />
-
               <div className="hero-footer">
-                <div className="hero-footer-item">
-                  <span className="footer-label">LAST UPDATED</span>
-                  <strong>{formatTimestamp(reading?.receivedAt)}</strong>
-                </div>
-
-                <span className="auto-update">
-                  <span className="auto-update-dot" />
-                  Updates automatically
-                </span>
+                <div className="hero-footer-item"><span className="footer-label">MEASURED AT</span><strong>{formatTimestamp(latest?.measuredAt)}</strong></div>
+                <span className="auto-update"><span className="auto-update-dot" />Live updates</span>
               </div>
             </article>
           </div>
 
-          <aside className="reading-side" aria-label="Current status">
-            <article
-              className={`detail-card panel status-card ${
-                activeAlerts.length > 0 ? "detail-alert" : ""
-              }`}
-            >
-              <span className="detail-icon status-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none">
-                  <circle
-                    cx="12"
-                    cy="12"
-                    r="8.25"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                  />
-                  <path
-                    d="m8.5 12.2 2.2 2.2 4.8-5"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </span>
-
-              <span className="detail-label">Current status</span>
-
-              <strong
-                className={`detail-value status-value ${
-                  activeAlerts.length > 0 ? "status-warning" : ""
-                }`}
-              >
-                {conditionLabel}
-              </strong>
-
-              <span className="detail-caption">
-                {testPayload
-                  ? "Demo data only"
-                  : activeAlerts.length > 0
-                    ? "Review the alert above"
-                    : reading
-                      ? "No configured alerts detected"
-                      : "Waiting for readings"}
-              </span>
+          <aside className="reading-side" aria-label="Device information">
+            <article className="detail-card panel">
+              <span className="detail-icon status-icon" aria-hidden="true">⌁</span>
+              <span className="detail-label">Device connection</span>
+              <strong className="detail-value">{deviceStatus === "connected" ? "Connected" : deviceStatus === "stale" ? "Connection unstable" : "Offline"}</strong>
+              <span className="detail-caption">{latest ? `Device ID: ${latest.deviceId}` : "Waiting for device data"}</span>
+            </article>
+            <article className="detail-card panel">
+              <span className="detail-icon status-icon" aria-hidden="true">◷</span>
+              <span className="detail-label">Last updated</span>
+              <strong className="detail-value timestamp-value">{formatTimestamp(latest?.measuredAt)}</strong>
+              <span className="detail-caption">{latest ? `Reading sequence #${latest.sequence}` : "No readings received yet"}</span>
+            </article>
+            <article className="detail-card panel">
+              <span className="detail-icon status-icon" aria-hidden="true">↻</span>
+              <span className="detail-label">Sensor availability</span>
+              <strong className="detail-value">{processed && processed.temperature.status !== "unavailable" ? "Temperature OK" : "Temperature unavailable"}</strong>
+              <span className="detail-caption">{processed && processed.moisture.status !== "unavailable" ? "Moisture calibrated" : "Moisture calibration pending"}</span>
             </article>
           </aside>
         </section>
 
-        <footer className="page-footer">
-          <div className="footer-brand">
-            <span className="footer-brand-dot" />
-            SMART BANDAGE
+        <section className="history-section panel">
+          <div className="history-header">
+            <div><div className="metric-overline">RECENT TELEMETRY</div><h2>Reading history</h2></div>
+            <span className="history-count">{history.length} samples</span>
           </div>
-          <p>For monitoring support—not a medical diagnosis.</p>
+          {history.length < 2 ? (
+            <p className="empty-history">History will appear after the device sends more readings.</p>
+          ) : (
+            <div className="history-grid">
+              <div className="history-chart">
+                <div className="history-chart-title">Temperature (°C)</div>
+                <svg viewBox="0 0 300 76" role="img" aria-label="Recent temperature trend">
+                  <path d="M6 68H294" stroke="#e6ece8" strokeWidth="1" />
+                  {tempPolyline && <polyline points={tempPolyline} fill="none" stroke="#17834d" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" />}
+                </svg>
+              </div>
+              <div className="history-chart">
+                <div className="history-chart-title">Moisture (%)</div>
+                <svg viewBox="0 0 300 76" role="img" aria-label="Recent moisture trend">
+                  <path d="M6 68H294" stroke="#e6ece8" strokeWidth="1" />
+                  {moisturePolyline && <polyline points={moisturePolyline} fill="none" stroke="#2f83b8" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" />}
+                </svg>
+                {!moisturePolyline && <div className="chart-caption">Available after electrode calibration.</div>}
+              </div>
+            </div>
+          )}
+          <p className="history-footnote">Historical values are based on received sensor samples. This display is an exhibition prototype, not a medical diagnosis.</p>
+        </section>
+
+        <footer className="page-footer">
+          <div className="footer-brand"><span className="footer-brand-dot" />SMART BANDAGE</div>
+          <p>For demonstration and monitoring education—not medical diagnosis.</p>
         </footer>
       </div>
     </main>
