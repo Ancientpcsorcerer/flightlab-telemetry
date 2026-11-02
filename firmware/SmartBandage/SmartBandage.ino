@@ -343,7 +343,10 @@ void drawDashboard(const String &overall, const String &deviceStatus,
     drawLabel(secondX + 8, cardY + 42, value, COLOR_WHITE, width < 360 ? 2 : 3);
     drawLabel(secondX + 8, cardY + 82, lastMoistureStatus.c_str(), COLOR_MUTED, 1);
   } else {
-    drawLabel(secondX + 8, cardY + 48, "CALIBRATE", COLOR_YELLOW, 2);
+    const char *unavailableLabel =
+      (lastMoistureStatus == "Calibrate first" || lastMoistureStatus == "Target not set")
+        ? "CALIBRATE" : "NO DATA";
+    drawLabel(secondX + 8, cardY + 48, unavailableLabel, COLOR_YELLOW, 2);
     drawLabel(secondX + 8, cardY + 82, lastMoistureStatus.c_str(), COLOR_MUTED, 1);
   }
 
@@ -489,6 +492,9 @@ void loop() {
       } else {
         setOfflineLed();
         lastLedState = "yellow";
+        lastMoisture = NAN;
+        lastMoistureStatus = "Unavailable";
+        lastOverall = "UNABLE TO ASSESS";
         lastDeviceStatus = "API UNAVAILABLE";
         drawDashboard("UNABLE TO ASSESS", lastDeviceStatus,
           lastTemperature, isfinite(lastTemperature),
@@ -499,6 +505,8 @@ void loop() {
     } else {
       setOfflineLed();
       lastLedState = "yellow";
+      lastMoisture = NAN;
+      lastMoistureStatus = "Unavailable";
       lastOverall = "UNABLE TO ASSESS";
       lastDeviceStatus = "WAITING FOR WIFI / TIME";
       drawDashboard(lastOverall, lastDeviceStatus,
