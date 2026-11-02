@@ -114,12 +114,13 @@ export default function Home() {
   const processed = latest?.processed ?? null;
   const history = payload?.history ?? [];
   const deviceStatus = latest?.deviceStatus ?? "offline";
+  const visibleDeviceStatus = loadError ? "offline" : deviceStatus;
   const tempValues = history.slice(-30).map((item) => item.temperature);
   const tempPolyline = makePolyline(tempValues);
   const moistureValues = history.slice(-30).map((item) => item.moisture);
   const moisturePolyline = makePolyline(moistureValues);
 
-  const overall = !latest || deviceStatus !== "connected"
+  const overall = !latest || loadError || deviceStatus !== "connected"
     ? "unable_to_assess"
     : processed?.overallStatus ?? "unable_to_assess";
 
@@ -149,7 +150,7 @@ export default function Home() {
         </a>
         <div className="topbar-actions">
           <span className={`connection-pill connection-${deviceStatus}`}>
-            <span className="tag-dot" />{deviceStatus === "connected" ? "DEVICE ONLINE" : deviceStatus === "stale" ? "DATA STALE" : "DEVICE OFFLINE"}
+            <span className="tag-dot" />{visibleDeviceStatus === "connected" ? "DEVICE ONLINE" : visibleDeviceStatus === "stale" ? "DATA STALE" : "DEVICE OFFLINE"}
           </span>
           <button className="refresh-button" type="button" onClick={() => void refreshTelemetry()} disabled={refreshing}>
             <svg className={refreshing ? "refresh-icon spinning" : "refresh-icon"} viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -245,7 +246,7 @@ export default function Home() {
             <article className="detail-card panel">
               <span className="detail-icon status-icon" aria-hidden="true">⌁</span>
               <span className="detail-label">Device connection</span>
-              <strong className="detail-value">{deviceStatus === "connected" ? "Connected" : deviceStatus === "stale" ? "Connection unstable" : "Offline"}</strong>
+              <strong className="detail-value">{visibleDeviceStatus === "connected" ? "Connected" : visibleDeviceStatus === "stale" ? "Connection unstable" : "Offline"}</strong>
               <span className="detail-caption">{latest ? `Device ID: ${latest.deviceId}` : "Waiting for device data"}</span>
             </article>
             <article className="detail-card panel">
