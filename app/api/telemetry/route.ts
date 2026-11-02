@@ -73,17 +73,22 @@ export async function POST(request: Request) {
   };
 
   try {
-    // Reject stale/replayed sequence numbers for the same device.
+    // Use the measurement timestamp for replay/order checks. This remains
+    // valid across Arduino reboots, where the local sequence counter restarts.
     const currentResult = await redisPipeline([["GET", LATEST_KEY]]);
     const rawCurrent = currentResult[0]?.result;
     if (rawCurrent) {
       try {
-        const current = JSON.parse(String(rawCurrent)) as { deviceId?: string; sequence?: number };
-        if (current.deviceId === data.deviceId && Number.isInteger(current.sequence) && data.sequence <= Number(current.sequence)) {
-          return NextResponse.json({ error: "Duplicate or out-of-order sequence", latestSequence: current.sequence }, { status: 409 });
+        const current = JSON.parse(String(rawCurrent)) as { deviceId?: string; measuredAt?: string };
+        if (
+          current.deviceId === data.deviceId &&
+          typeof current.measuredAt === "string" &&
+          Date.parse(current.measuredAt) >= measuredAtMs
+        ) {
+          return NextResponse.json({ error: "Duplicate or out-of-order measurement timestamp" }, { status: 409 });
         }
       } catch {
-        // Replace malformed legacy cache entries with the next validated reading.
+        // Replace malformed/legacy cache entries with the next valid reading.
       }
     }
 
@@ -115,13 +120,30 @@ export async function GET() {
     const rawLatest = results[0]?.result;
     if (!rawLatest) return NextResponse.json({ ok: true, latest: null, history: [] });
 
-    const stored = JSON.parse(String(rawLatest)) as {
+    let stored: {
       receivedAt: string;
       measuredAt: string;
       deviceId: string;
       sequence: number;
       processed: ReturnType<typeof processTelemetry>;
     };
+    try {
+      const parsed = JSON.parse(String(rawLatest)) as Partial<typeof stored>;
+      // Ignore old demo-cache entries from the previous payload format.
+      if (
+        typeof parsed.receivedAt !== "string" ||
+        typeof parsed.measuredAt !== "string" ||
+        typeof parsed.deviceId !== "string" ||
+        typeof parsed.sequence !== "number" ||
+        !parsed.processed
+      ) {
+        return NextResponse.json({ ok: true, latest: null, history: [] });
+      }
+      stored = parsed as typeof stored;
+    } catch {
+      return NextResponse.json({ ok: true, latest: null, history: [] });
+    }
+
     const ageMs = Math.max(0, Date.now() - Date.parse(stored.receivedAt));
     const deviceStatus = ageMs <= MAX_AGE_MS ? "connected" : ageMs <= OFFLINE_AGE_MS ? "stale" : "offline";
     const processed = deviceStatus === "connected"
