@@ -43,6 +43,8 @@ The real `arduino_secrets.h` is ignored by Git. Do not commit it.
 | All LED cathodes | GND |
 | FDC1004 | Labelled SDA/SCL pins on main I2C bus |
 
+The four copper sensing strips are independent electrodes. Connect them one-to-one to FDC1004 CIN1, CIN2, CIN3 and CIN4, respectively. Firmware channel indices are zero-based: `FDC1004_CHANNEL_0` = CIN1 through `FDC1004_CHANNEL_3` = CIN4.
+
 ### FDC1004 bus note
 
 This sketch uses the **main I²C bus (`Wire`)** because the current prototype connects the breakout's labelled SDA/SCL pins to the UNO R4 WiFi's dedicated SDA/SCL header. Keep those connections; do not move them to the Qwiic connector for this firmware. Connect SDA to SDA and SCL to SCL. Connect breakout VCC and GND only to the pins labelled VCC and GND on the ProtoCentral breakout, and keep a common ground. The ProtoCentral breakout's VCC input supports 5 V through its onboard regulator; the UNO's Qwiic connector is a separate 3.3 V bus and is not used here.
@@ -77,6 +79,7 @@ The firmware sends schema version 1:
       "cin1": 12.45,
       "cin2": 11.82,
       "cin3": 13.10,
+      "cin4": 12.75,
       "unit": "pF",
       "status": "ok"
     }
@@ -88,9 +91,9 @@ The sequence counter increments during each powered session. The API uses the UT
 
 ## 6. Moisture calibration
 
-FDC1004 measures capacitance, not moisture percentage. The backend's simple exhibition conversion averages CIN1–CIN3 and maps the result between two measured reference points:
+FDC1004 measures capacitance, not moisture percentage. The backend's simple exhibition conversion averages CIN1–CIN4 (all four independent electrodes) and maps the result between two measured reference points:
 
-`moisture % = (average pF - dry reference pF) / (wet reference pF - dry reference pF) × 100`
+`moisture % = (average of CIN1–CIN4 - dry reference pF) / (wet reference pF - dry reference pF) × 100`
 
 This is only a prototype calibration model. Measure the actual assembled electrodes under repeatable dry and wet conditions, then set:
 
