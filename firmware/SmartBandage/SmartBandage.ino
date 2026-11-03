@@ -305,61 +305,81 @@ void drawDashboard(const String &overall, const String &deviceStatus,
                    float temperature, bool temperatureValid,
                    float moisture, bool moistureValid,
                    const String &clockText, bool apiOk) {
-  int16_t width = gfx->width();
-  int16_t height = gfx->height();
+  const int16_t width = gfx->width();
+  const int16_t height = gfx->height();
+  const int16_t margin = 10;
+  const int16_t contentWidth = width - (margin * 2);
+
   gfx->fillScreen(COLOR_BG);
 
-  drawLabel(12, 10, "SMART BANDAGE", COLOR_WHITE, 2);
-  drawLabel(width - 105, 14, apiOk ? "ONLINE" : "OFFLINE", apiOk ? COLOR_GREEN : COLOR_YELLOW, 1);
+  // Header.
+  drawLabel(12, 8, "SMART BANDAGE", COLOR_WHITE, 2);
+  drawLabel(width - 82, 12, apiOk ? "ONLINE" : "OFFLINE",
+            apiOk ? COLOR_GREEN : COLOR_YELLOW, 1);
 
-  uint16_t statusColor = lastLedState == "green" ? COLOR_GREEN :
-                         lastLedState == "red" ? COLOR_RED : COLOR_YELLOW;
-  gfx->fillRect(10, 42, width - 20, 54, COLOR_PANEL);
-  gfx->drawRect(10, 42, width - 20, 54, statusColor);
-  drawLabel(20, 49, "OVERALL STATUS", COLOR_MUTED, 1);
-  drawLabel(20, 68, overall.c_str(), statusColor, 2);
+  // Full-width overall status panel.
+  const uint16_t statusColor = lastLedState == "green" ? COLOR_GREEN :
+                               lastLedState == "red" ? COLOR_RED : COLOR_YELLOW;
+  gfx->fillRect(margin, 38, contentWidth, 56, COLOR_PANEL);
+  gfx->drawRect(margin, 38, contentWidth, 56, statusColor);
+  drawLabel(margin + 10, 45, "OVERALL STATUS", COLOR_MUTED, 1);
+  drawLabel(margin + 10, 64, overall.c_str(), statusColor, 2);
 
-  int16_t gap = 8;
-  int16_t cardWidth = (width - 30 - gap) / 2;
-  int16_t cardY = 108;
-  int16_t cardH = 122;
-  int16_t secondX = 20 + cardWidth + gap;
+  // Portrait layout: one full-width metric card above the other.
+  const int16_t cardsTop = 104;
+  const int16_t cardGap = 10;
+  const int16_t footerY = height - 92;
+  int16_t cardHeight = (footerY - cardsTop - cardGap - 8) / 2;
+  if (cardHeight > 138) cardHeight = 138;
+  if (cardHeight < 112) cardHeight = 112;
 
-  gfx->fillRect(10, cardY, cardWidth, cardH, COLOR_PANEL);
-  gfx->drawRect(10, cardY, cardWidth, cardH, COLOR_BLUE);
-  drawLabel(18, cardY + 10, "TEMPERATURE", COLOR_MUTED, 1);
+  const int16_t temperatureY = cardsTop;
+  const int16_t moistureY = temperatureY + cardHeight + cardGap;
+
+  // Temperature card — full width.
+  gfx->fillRect(margin, temperatureY, contentWidth, cardHeight, COLOR_PANEL);
+  gfx->drawRect(margin, temperatureY, contentWidth, cardHeight, COLOR_BLUE);
+  drawLabel(margin + 12, temperatureY + 10, "TEMPERATURE", COLOR_MUTED, 1);
+
   if (temperatureValid) {
     char value[20];
     snprintf(value, sizeof(value), "%.1f C", temperature);
-    drawLabel(18, cardY + 42, value, COLOR_WHITE, width < 360 ? 2 : 3);
-    drawLabel(18, cardY + 82, lastTemperatureStatus.c_str(), COLOR_MUTED, 1);
+    drawLabel(margin + 14, temperatureY + 39, value, COLOR_WHITE, 4);
+    drawLabel(margin + 12, temperatureY + cardHeight - 24,
+              lastTemperatureStatus.c_str(), COLOR_MUTED, 1);
   } else {
-    drawLabel(18, cardY + 48, "NO DATA", COLOR_YELLOW, 2);
-    drawLabel(18, cardY + 82, lastTemperatureStatus.c_str(), COLOR_MUTED, 1);
+    drawLabel(margin + 12, temperatureY + 49, "NO DATA", COLOR_YELLOW, 3);
+    drawLabel(margin + 12, temperatureY + cardHeight - 24,
+              lastTemperatureStatus.c_str(), COLOR_MUTED, 1);
   }
 
-  gfx->fillRect(secondX, cardY, cardWidth, cardH, COLOR_PANEL);
-  gfx->drawRect(secondX, cardY, cardWidth, cardH, COLOR_BLUE);
-  drawLabel(secondX + 8, cardY + 10, "MOISTURE", COLOR_MUTED, 1);
+  // Moisture card — directly below temperature, same full width.
+  gfx->fillRect(margin, moistureY, contentWidth, cardHeight, COLOR_PANEL);
+  gfx->drawRect(margin, moistureY, contentWidth, cardHeight, COLOR_BLUE);
+  drawLabel(margin + 12, moistureY + 10, "MOISTURE BALANCE", COLOR_MUTED, 1);
+
   if (moistureValid) {
     char value[20];
     snprintf(value, sizeof(value), "%.1f%%", moisture);
-    drawLabel(secondX + 8, cardY + 42, value, COLOR_WHITE, width < 360 ? 2 : 3);
-    drawLabel(secondX + 8, cardY + 82, lastMoistureStatus.c_str(), COLOR_MUTED, 1);
+    drawLabel(margin + 14, moistureY + 39, value, COLOR_WHITE, 4);
+    drawLabel(margin + 12, moistureY + cardHeight - 24,
+              lastMoistureStatus.c_str(), COLOR_MUTED, 1);
   } else {
-    const char *unavailableLabel =
-      (lastMoistureStatus == "Calibrate first" || lastMoistureStatus == "Target not set")
-        ? "CALIBRATE" : "NO DATA";
-    drawLabel(secondX + 8, cardY + 48, unavailableLabel, COLOR_YELLOW, 2);
-    drawLabel(secondX + 8, cardY + 82, lastMoistureStatus.c_str(), COLOR_MUTED, 1);
+    const char *message = lastMoistureStatus == "Target not set" ? "SET TARGET" :
+                          lastMoistureStatus == "Calibrate first" ? "CALIBRATE" : "NO DATA";
+    drawLabel(margin + 12, moistureY + 49, message, COLOR_YELLOW, 3);
+    drawLabel(margin + 12, moistureY + cardHeight - 24,
+              lastMoistureStatus.c_str(), COLOR_MUTED, 1);
   }
 
-  int16_t footerY = cardY + cardH + 18;
-  drawLabel(12, footerY, "LAST MEASUREMENT", COLOR_MUTED, 1);
-  drawLabel(12, footerY + 19, clockText.c_str(), COLOR_WHITE, 2);
-  drawLabel(12, footerY + 52, deviceStatus.c_str(), apiOk ? COLOR_GREEN : COLOR_YELLOW, 1);
-  if (height > footerY + 90) {
-    drawLabel(12, height - 22, "EXHIBITION MONITORING MODEL", COLOR_MUTED, 1);
+  // Footer sits below both cards.
+  drawLabel(12, footerY + 5, "LAST MEASUREMENT", COLOR_MUTED, 1);
+  drawLabel(12, footerY + 23, clockText.c_str(), COLOR_WHITE, 2);
+  drawLabel(12, footerY + 51, deviceStatus.c_str(),
+            apiOk ? COLOR_GREEN : COLOR_YELLOW, 1);
+
+  if (height > 450) {
+    drawLabel(12, height - 17, "EXHIBITION MONITORING MODEL", COLOR_MUTED, 1);
   }
 }
 
