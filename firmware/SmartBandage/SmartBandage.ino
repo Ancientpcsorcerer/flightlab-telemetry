@@ -418,7 +418,7 @@ void setup() {
   setLeds("yellow");
 
   gfx->begin();
-  gfx->setRotation(1); // Change to 3 if the display is upside down.
+  gfx->setRotation(3); // Landscape orientation rotated 180 degrees for this prototype.
   drawDashboard("STARTING", "INITIALIZING", NAN, false, NAN, false, "Waiting for time sync", false);
 
   temperatureSensor.begin();
