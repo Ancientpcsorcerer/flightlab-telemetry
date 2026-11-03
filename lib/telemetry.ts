@@ -62,7 +62,7 @@ export function validateTelemetry(input: unknown): input is IncomingTelemetry {
   if (!input || typeof input !== "object" || Array.isArray(input)) return false;
   const x = input as Record<string, unknown>;
   if (x.schemaVersion !== 1 || typeof x.deviceId !== "string" || !x.deviceId.trim()) return false;
-  if (typeof x.timestamp !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$/.test(x.timestamp) || Number.isNaN(Date.parse(x.timestamp))) return false;
+  if (typeof x.timestamp !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(x.timestamp) || Number.isNaN(Date.parse(x.timestamp))) return false;
   if (!Number.isSafeInteger(x.sequence) || Number(x.sequence) < 0) return false;
 
   const sensors = x.sensors as Record<string, unknown> | undefined;
