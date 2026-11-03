@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   if (!validateTelemetry(input)) {
     return NextResponse.json({
       error: "Invalid telemetry payload",
-      expected: "schemaVersion 1 with deviceId, ISO timestamp, sequence, temperature and CIN1-CIN3 sensor fields",
+      expected: "schemaVersion 1 with deviceId, ISO timestamp, sequence, temperature and CIN1-CIN4 sensor fields",
     }, { status: 400 });
   }
 
