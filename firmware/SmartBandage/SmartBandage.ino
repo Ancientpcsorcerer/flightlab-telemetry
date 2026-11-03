@@ -8,7 +8,7 @@
     Red LED      -> D11 through 330R
     Yellow LED   -> D12 through 330R
     Green LED    -> D13 through 330R
-    FDC1004      -> UNO R4 WiFi main SDA/SCL header (Wire)
+    FDC1004      -> UNO R4 WiFi main SDA/SCL header (Wire), CIN1-CIN4
     TFT          -> 3.5in ILI9486 parallel shield (Arduino_GFX)
 
   Keep the TFT shield's microSD slot empty. D10-D13 are shared with its
@@ -209,15 +209,17 @@ bool readTemperature(float &value) {
   return true;
 }
 
-bool readCapacitance(float &cin1, float &cin2, float &cin3) {
+bool readCapacitance(float &cin1, float &cin2, float &cin3, float &cin4) {
   if (!fdcReady) return false;
   float a = capacitanceSensor.getCapacitancePicofarads(FDC1004_CHANNEL_0);
   float b = capacitanceSensor.getCapacitancePicofarads(FDC1004_CHANNEL_1);
   float c = capacitanceSensor.getCapacitancePicofarads(FDC1004_CHANNEL_2);
-  if (!isfinite(a) || !isfinite(b) || !isfinite(c)) return false;
+  float d = capacitanceSensor.getCapacitancePicofarads(FDC1004_CHANNEL_3);
+  if (!isfinite(a) || !isfinite(b) || !isfinite(c) || !isfinite(d)) return false;
   cin1 = a;
   cin2 = b;
   cin3 = c;
+  cin4 = d;
   return true;
 }
 
@@ -243,7 +245,7 @@ String makeLocalClock(unsigned long epoch) {
 }
 
 String buildPayload(float temperature, bool temperatureOk,
-                    float cin1, float cin2, float cin3, bool capacitanceOk,
+                    float cin1, float cin2, float cin3, float cin4, bool capacitanceOk,
                     const String &timestamp, unsigned long sequence) {
   JsonDocument doc;
   doc["schemaVersion"] = 1;
@@ -263,10 +265,12 @@ String buildPayload(float temperature, bool temperatureOk,
     cap["cin1"] = cin1;
     cap["cin2"] = cin2;
     cap["cin3"] = cin3;
+    cap["cin4"] = cin4;
   } else {
     cap["cin1"] = nullptr;
     cap["cin2"] = nullptr;
     cap["cin3"] = nullptr;
+    cap["cin4"] = nullptr;
   }
   cap["unit"] = "pF";
   cap["status"] = capacitanceOk ? "ok" : (fdcReady ? "error" : "disconnected");
@@ -462,9 +466,9 @@ void loop() {
     lastSampleMs = now;
 
     float temp = NAN;
-    float cin1 = NAN, cin2 = NAN, cin3 = NAN;
+    float cin1 = NAN, cin2 = NAN, cin3 = NAN, cin4 = NAN;
     bool tempOk = readTemperature(temp);
-    bool capOk = readCapacitance(cin1, cin2, cin3);
+    bool capOk = readCapacitance(cin1, cin2, cin3, cin4);
 
     if (tempOk) lastTemperature = temp;
     else lastTemperature = NAN;
@@ -475,7 +479,7 @@ void loop() {
       sequenceCounter++;
       String timestamp = makeUtcTimestamp(epoch);
       lastMeasuredAt = makeLocalClock(epoch);
-      String payload = buildPayload(temp, tempOk, cin1, cin2, cin3, capOk, timestamp, sequenceCounter);
+      String payload = buildPayload(temp, tempOk, cin1, cin2, cin3, cin4, capOk, timestamp, sequenceCounter);
 
       Serial.println(F("[POST] Sending telemetry"));
       Serial.println(payload);
