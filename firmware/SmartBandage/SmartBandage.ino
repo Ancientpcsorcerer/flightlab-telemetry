@@ -418,7 +418,7 @@ void setup() {
   setLeds("yellow");
 
   gfx->begin();
-  gfx->setRotation(3); // Landscape orientation rotated 180 degrees for this prototype.
+  gfx->setRotation(0); // Native portrait orientation for the ILI9486 320x480 panel.
   drawDashboard("STARTING", "INITIALIZING", NAN, false, NAN, false, "Waiting for time sync", false);
 
   temperatureSensor.begin();
