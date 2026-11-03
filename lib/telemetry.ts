@@ -13,6 +13,7 @@ export type IncomingTelemetry = {
       cin1: number | null;
       cin2: number | null;
       cin3: number | null;
+      cin4?: number | null; // Optional for compatibility with earlier 3-channel firmware.
       unit: "pF";
       status: SensorStatus;
     };
@@ -71,13 +72,14 @@ export function validateTelemetry(input: unknown): input is IncomingTelemetry {
   if (!temp || !cap) return false;
   if (temp.unit !== "degC" || !validNullableNumber(temp.value) || !isSensorStatus(temp.status)) return false;
   if (cap.unit !== "pF" || !isSensorStatus(cap.status)) return false;
-  return ["cin1", "cin2", "cin3"].every((key) => validNullableNumber(cap[key]));
+  return ["cin1", "cin2", "cin3"].every((key) => validNullableNumber(cap[key])) &&
+    (cap.cin4 === undefined || validNullableNumber(cap.cin4));
 }
 
 function capacitanceToMoisture(values: Array<number | null>): number | null {
   if (![DRY_PF, WET_PF].every(Number.isFinite) || DRY_PF === WET_PF) return null;
   const usable = values.filter((value): value is number => isFiniteNumber(value));
-  if (usable.length !== 3) return null;
+  if (values.length !== 4 || usable.length !== 4) return null;
   const average = usable.reduce((sum, value) => sum + value, 0) / usable.length;
   const percent = ((average - DRY_PF) / (WET_PF - DRY_PF)) * 100;
   return Math.round(Math.min(100, Math.max(0, percent)) * 10) / 10;
@@ -94,7 +96,7 @@ export function processTelemetry(data: IncomingTelemetry): ProcessedTelemetry {
         : "within_range";
 
   const moistureValue = cap.status === "ok"
-    ? capacitanceToMoisture([cap.cin1, cap.cin2, cap.cin3])
+    ? capacitanceToMoisture([cap.cin1, cap.cin2, cap.cin3, cap.cin4 ?? null])
     : null;
   const moistureRangeValid =
     Number.isFinite(MOISTURE_MIN) &&
